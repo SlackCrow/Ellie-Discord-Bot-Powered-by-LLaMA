@@ -74,7 +74,7 @@ def chat_complete(name: str, message: str, prompt_history_org: dict, server_id: 
     if result['choices'][0]['message']['content'] == "" or result['choices'][0]['message']['content'] == '\u200b':
         prompt_history.pop()
         return chat_complete(name=name, message=message+".", prompt_history_org=prompt_history, server_id=server_id)
-    response = result['choices'][0]['message']['content'].split('\n')[0]
+    response = result['choices'][0]['message']['content']
     response = process_response(response, user_name = name_without_number, currently_known_names=known_names)
     if single_user_mode:
         prompt_history_to_return[name].append({"role": "assistant", "content":response})
