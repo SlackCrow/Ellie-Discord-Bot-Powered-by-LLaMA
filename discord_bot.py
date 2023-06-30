@@ -7,6 +7,24 @@ gptj = LLM_interface(model_name=model_name_to_use, model_path=model_path_to_use,
 
 block: bool = False
 
+def load_data() -> tuple[dict, list]:
+    try:
+        f = open('prompt_backup.json')
+        prompt = json.load(f)
+        f.close()
+    except FileNotFoundError:
+        prompt = dict()
+    try:
+        f = open('known_names_backup.json')
+        known_names = json.load(f)
+        f.close()
+    except FileNotFoundError:
+        known_names = list()
+    return prompt, known_names
+
+prompt, known_names = load_data()
+
+# TODO: FIX 
 @jit(nopython=True, fastmath=True)
 def check_similarity(str1: str, str2: str) -> float:
     len1: int = len(str1)
@@ -57,23 +75,6 @@ def detokenize(words) -> str:
     step6 = step5.replace(" ` ", " '")
     return step6.strip()
 
-def load_data() -> tuple[dict, list]:
-    try:
-        f = open('prompt_backup.json')
-        prompt = json.load(f)
-        f.close()
-    except FileNotFoundError:
-        prompt = dict()
-    try:
-        f = open('known_names_backup.json')
-        known_names = json.load(f)
-        f.close()
-    except FileNotFoundError:
-        known_names = list()
-    return prompt, known_names
-
-prompt, known_names = load_data()
-
 def chat_complete(name: str, message: str, prompt_history_org: dict, server_id: int) -> tuple[T, str]:
     global block, known_names
     while block: 
@@ -115,7 +116,6 @@ def chat_complete(name: str, message: str, prompt_history_org: dict, server_id: 
     else:
         prompt_history_to_return[server_id].append({"role": "assistant", "content":"Ellie» " + response})
         block = False
-        print(prompt_history_to_return)
         return prompt_history_to_return, response
 
 # Processing the response before tokenization
@@ -143,13 +143,12 @@ def pre_process_response(input: str) -> str:
 # Processing the response after tokenization
 @jit(nopython=True)
 def post_process_response(tokenized_response: list[str], assistant_name: str, currently_known_names: list[str]) -> str:
-    if (check_similarity(tokenized_response[0], assistant_name) > 0.5):
+    if (check_similarity(tokenized_response[0], assistant_name) > 0.8):
         tokenized_response[0] = ''
-    for token in tokenized_response:
+    for i, token in enumerate(tokenized_response):
         for name in currently_known_names:
-            if (check_similarity(name, token) > 0.5):
-                token = name
-                break
+            if (check_similarity(name, token) > 0.8):
+                tokenized_response[i] = name
     return tokenized_response
 
 # Processing the response to make outputs from LLM to make a bit more sense 

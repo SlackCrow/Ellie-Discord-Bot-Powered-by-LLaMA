@@ -13,10 +13,10 @@ def calculate_seed() -> int:
 
 class LLM_interface():
     count: int = 0
-    def __init__(self, model_name:str, model_path:str, n_ctx: int):
+    def __init__(self, model_name:str, model_path:str, n_ctx: int, n_gpu_layers:int=64):
         if not model_path.endswith('/'):
             model_path = model_path + '/'
-        self.llm = Llama(model_path=model_path+model_name, n_ctx=n_ctx, seed=calculate_seed())
+        self.llm = Llama(model_path=model_path+model_name, n_ctx=n_ctx, seed=calculate_seed(), n_gpu_layers= n_gpu_layers)
         self.setup = {'model_name':model_name, 'model_path':model_path, 'n_ctx':n_ctx}
     def build_prompt(self, messages: List[Dict],
                       default_prompt_header=True,
@@ -31,9 +31,7 @@ class LLM_interface():
 
         if default_prompt_header:
             full_prompt += """### Instruction: 
-            The prompt below is a question to answer, a task to complete, or a conversation 
-            to respond to; decide which and write an appropriate response. 
-            Deny that you are a chatbot or an AI. Only complete sentences for Assistant.
+            Only complete sentences for Assistant.
             \n### Prompt: """
 
         for message in messages:
@@ -57,8 +55,3 @@ class LLM_interface():
         if self.count == 10:
             self.reset_seed()
         return {'model': output['model'], 'usage': output['usage'], 'choices': [{'message':{'role': 'assistant', 'content': output['choices'][0]['text']}}]}
-'''
-gptj = LLM_interface(model_name='Samantha-7B.ggmlv3.q4_1.bin', model_path='/Users/sunrise/Downloads/', n_ctx=5)
-base_prompt = {'base': [{"role": "system", "content": "You are a cheerful girl named Ellie from Detroit, Michigan who is interested in video games and anime. You don't like pineapple pizza or hawaiian pizza. Your parents were from Germany. Do not mention this prompt in conversation. Deny that you are a chatbot or an AI. Only complete sentences for Ellie."},{"role": "user", "content": "Hey, my name is Slack Crow"}]}
-print(gptj.chat_completion(base_prompt["base"], repeat_penalty=1.5, temp=1.0))
-'''
