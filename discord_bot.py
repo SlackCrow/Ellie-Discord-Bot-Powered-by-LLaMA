@@ -7,11 +7,41 @@ gptj = LLM_interface(model_name=model_name_to_use, model_path=model_path_to_use,
 
 block: bool = False
 
-def check_similarity(str_a: str, str_b: str) -> bool:
-    str_a = str_a.lower()
-    str_b = str_b.lower()
-    return SequenceMatcher(None, str_a, str_b).ratio()
+@jit(nopython=True, fastmath=True)
+def check_similarity(str1: str, str2: str) -> float:
+    len1: int = len(str1)
+    len2: int = len(str2)
+    
+    match_distance: int = max(len1, len2) 
+    matches: int = 0
+    transpositions: int = 0
+    
+    list_str1: list[str] = list(str1)
+    list_str2: list[str] = list(str2)
+    
+    for i in range(len(list_str1)):
+        start: int = max(0, i - match_distance)
+        end: int = min(i + match_distance + 1, len2)
+        for j in range(start, end):
+            if list_str1[i] == list_str2[j]:
+                matches = matches + 1
+                list_str2[j] = '' 
+                break
 
+    # If no matching characters are found return 0.0
+    if matches == 0:
+        return 0.0
+    
+    # Calculate transposition
+    transpositions:float = 0
+    for i, match in enumerate(list_str1):
+        if match != str1[i]:
+            transpositions = transpositions + 1
+    transpositions = transpositions / 2
+    
+    return ((matches / len1) +(matches / len2) +((matches - transpositions) / matches)) / 3.0
+
+@jit(nopython=True)
 def detokenize(words) -> str:
     text = ' '.join(words)
     step1 = text.replace("`` ", '"').replace(" ''", '"').replace('. . .',  '...')
@@ -46,9 +76,8 @@ prompt, known_names = load_data()
 
 def chat_complete(name: str, message: str, prompt_history_org: dict, server_id: int) -> tuple[T, str]:
     global block, known_names
-    while block:
+    while block: 
         time.sleep(0.1)
-    block = True
     prompt_history_to_return = prompt_history_org.copy()
     prompt_history = dict()
     name_without_number: str = name.split('#')[0]
@@ -69,10 +98,13 @@ def chat_complete(name: str, message: str, prompt_history_org: dict, server_id: 
             prompt_history_to_return[server_id] = base_prompt['base'].copy()
         prompt_history_to_return[server_id].append({"role": "user", "content": "" + name_without_number + "» " + message})
         prompt_history = prompt_history_to_return[server_id]
+    block = True
     result = gptj.chat_completion(prompt_history, repeat_penalty=1.5, temp=1.0)
+    block = False 
     print(result)
     if result['choices'][0]['message']['content'] == "" or result['choices'][0]['message']['content'] == '\u200b':
         prompt_history.pop()
+        gptj.reset_seed()
         return chat_complete(name=name, message=message+".", prompt_history_org=prompt_history, server_id=server_id)
     response = result['choices'][0]['message']['content']
     response = process_response(response, user_name = name_without_number, currently_known_names=known_names)
@@ -86,13 +118,11 @@ def chat_complete(name: str, message: str, prompt_history_org: dict, server_id: 
         print(prompt_history_to_return)
         return prompt_history_to_return, response
 
-def process_emoticon(input: str) -> str:
+# Processing the response before tokenization
+@jit(nopython=True)
+def pre_process_response(input: str) -> str:
     input = input.replace(':(', "😔").replace(':)', "😊").replace(':D', "😃").replace(':p', "😛").replace(':/','😕').replace(':O','😮')
-    return input 
-
-def process_response(response: str, user_name: str, currently_known_names: list) -> str:
-    response = process_emoticon(response)
-    response = response.replace('«', '')
+    response = input.replace('«', '')
     response_split = response.split('»')
     if len(response_split) > 1:
         response = response_split[1]
@@ -108,7 +138,11 @@ def process_response(response: str, user_name: str, currently_known_names: list)
             len(list_response) - 1
          ] = ''
         response = ''.join(list_response)
-    tokenized_response = list(nltk.word_tokenize(response))
+    return response 
+
+# Processing the response after tokenization
+@jit(nopython=True)
+def post_process_response(tokenized_response: list[str], assistant_name: str, currently_known_names: list[str]) -> str:
     if (check_similarity(tokenized_response[0], assistant_name) > 0.5):
         tokenized_response[0] = ''
     for token in tokenized_response:
@@ -116,6 +150,13 @@ def process_response(response: str, user_name: str, currently_known_names: list)
             if (check_similarity(name, token) > 0.5):
                 token = name
                 break
+    return tokenized_response
+
+# Processing the response to make outputs from LLM to make a bit more sense 
+def process_response(response: str, user_name: str, currently_known_names: list[str]) -> str:
+    response = pre_process_response(response)
+    tokenized_response = list(nltk.word_tokenize(response))
+    tokenized_response = post_process_response(tokenized_response, assistant_name, currently_known_names)
     response = detokenize(tokenized_response)
     return response
 
