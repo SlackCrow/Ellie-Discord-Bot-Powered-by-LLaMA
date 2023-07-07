@@ -24,40 +24,39 @@ def load_data() -> tuple[dict, list]:
 
 prompt, known_names = load_data()
 
-# TODO: FIX 
+# TODO: edit it so that it uses numpy arrays from the beginning
+# Levenshtein distance 
 @jit(nopython=True, fastmath=True)
-def check_similarity(str1: str, str2: str) -> float:
-    len1: int = len(str1)
-    len2: int = len(str2)
-    
-    match_distance: int = max(len1, len2) 
-    matches: int = 0
-    transpositions: int = 0
-    
-    list_str1: list[str] = list(str1)
-    list_str2: list[str] = list(str2)
-    
-    for i in range(len(list_str1)):
-        start: int = max(0, i - match_distance)
-        end: int = min(i + match_distance + 1, len2)
-        for j in range(start, end):
-            if list_str1[i] == list_str2[j]:
-                matches = matches + 1
-                list_str2[j] = '' 
-                break
+def check_similarity(str1: str, str2:str) -> float:
+    if str1 == str2:
+        return 1.0
 
-    # If no matching characters are found return 0.0
-    if matches == 0:
-        return 0.0
-    
-    # Calculate transposition
-    transpositions:float = 0
-    for i, match in enumerate(list_str1):
-        if match != str1[i]:
-            transpositions = transpositions + 1
-    transpositions = transpositions / 2
-    
-    return ((matches / len1) +(matches / len2) +((matches - transpositions) / matches)) / 3.0
+    len1: int = len(str1)
+    len2:int  = len(str2)
+    matrix: list = [[0] * (len2 + 1) for _ in range(len1 + 1)]
+
+    for i in range(len1 + 1):
+        matrix[i][0] = i
+    for j in range(len2 + 1):
+        matrix[0][j] = j
+
+    matrix_np = np.array(matrix)
+
+    for i in range(1, len1 + 1):
+        for j in range(1, len2 + 1):
+            if str1[i-1] == str2[j-1]:
+                cost = 0
+            else:
+                cost = 1
+            matrix_np[i][j] = min(
+                matrix_np[i - 1][j] + 1, # Deletion
+                matrix_np[i][j - 1] + 1, # Insertion
+                matrix_np[i - 1][j - 1] + cost # Substitution
+            )
+
+    max_len: int = max(len1, len2)
+    similarity = 1 - (matrix_np[len1][len2] / max_len)
+    return similarity
 
 @jit(nopython=True)
 def detokenize(words) -> str:
@@ -181,30 +180,39 @@ async def on_ready():
 @client.event
 async def on_message(message):
     global prompt
+
     if message.author == client.user:
         return
-    if not message.content.startswith('!e'):
-        return
-    try:
-        server_id = message.channel.guild.id
-    except:
-        server_id = message.id
-    if message.content.startswith('!e status'):
-        if single_user_mode:
-            await message.channel.send("Ellie Running in single user mode")
-            await message.channel.send("Context Size: " + str(len(prompt[str(message.author).split('#')[0]])))
-        else:
-            await message.channel.send("Ellie Running in multi user mode")
-        return
-    elif message.content.startswith('!e server_id'):
-        await message.channel.send(str(server_id))
-        return
+    
+    if multi_server_mode:
+        try:
+            server_id = message.channel.guild.id
+        except:
+            server_id = message.id
     else:
-        message_content = message.content[3:]
-    if not multi_server_mode:
         server_id = 0
-    prompt, response_touse = await run_chat_complete(chat_complete, name=str(message.author).split('#')[0], message=message_content, prompt_history_org=prompt, server_id=server_id)
-    await message.channel.send(str(message.author.mention) + " " + response_touse)
+    
+    if not message.content.startswith('!e'):
+        if client.user.mention in message.content:
+            message_content = message.content[23:]
+            print(message_content)
+            prompt, response_touse = await run_chat_complete(chat_complete, name=str(message.author).split('#')[0], message=message_content, prompt_history_org=prompt, server_id=server_id)
+            await message.channel.send(str(message.author.mention) + " " + response_touse)
+    else:
+        if message.content.startswith('!e status'):
+            if single_user_mode:
+                await message.channel.send(assistant_name + " Running in single user mode")
+                await message.channel.send("Context Size: " + str(len(prompt[str(message.author).split('#')[0]])))
+            else:
+                await message.channel.send("Ellie Running in multi user mode")
+        elif message.content.startswith('!e server_id'):
+            await message.channel.send(str(server_id))
+
+    
+
+
+
+
 
 client.run(TOKEN)
 

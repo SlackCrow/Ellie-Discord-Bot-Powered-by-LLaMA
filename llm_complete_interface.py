@@ -47,7 +47,7 @@ class LLM_interface():
 
         return full_prompt
     def reset_seed(self):
-        self.llm = Llama(model_path=self.setup['model_path']+self.setup['model_name'], n_ctx=self.setup['n_ctx'], seed=calculate_seed())
+        self.llm = Llama(model_path=self.setup['model_path']+self.setup['model_name'], n_ctx=self.setup['n_ctx'], seed=calculate_seed(), n_batch=1024)
 
     def chat_completion(self, prompt_history: list, repeat_penalty:float, temp:float):
         self.count = self.count + 1
